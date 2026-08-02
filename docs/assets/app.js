@@ -15,9 +15,45 @@
     statusFiltro: new Set(),
     tipoFiltro: new Set(),
     recintoFiltro: new Set(),
+    categoriaFiltro: new Set(),
   };
 
   const STATUS_ORDER = ["Agendado", "Recebendo Propostas", "Em Disputa/Lances", "Encerrado", "Desconhecido"];
+  const SEM_CATEGORIA = "(sem categoria)";
+  const CATEGORIAS_PADRAO = ["Interesse alto", "Avaliar depois", "Talvez", "Descartado"];
+  const LS_KEY = "leilaoReceita.categorias.v1";
+
+  // ---- persistencia local (localStorage) das categorias que o usuario define por lote ----
+  // fica no navegador dele, nao no GitHub - cada pessoa que abre o dashboard tem a sua propria lista.
+  const MyCategories = (function () {
+    let data = { porLote: {}, extras: [] };
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) data = JSON.parse(raw);
+    } catch (e) { /* localStorage indisponivel ou corrompido: segue com estado vazio */ }
+    if (!data.porLote) data.porLote = {};
+    if (!data.extras) data.extras = [];
+
+    function persist() {
+      try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch (e) { /* quota cheia ou bloqueado */ }
+    }
+    return {
+      get(key) { return data.porLote[key] || ""; },
+      set(key, categoria) {
+        if (categoria) data.porLote[key] = categoria; else delete data.porLote[key];
+        persist();
+      },
+      listaCategorias() {
+        return [...CATEGORIAS_PADRAO, ...data.extras.filter(c => !CATEGORIAS_PADRAO.includes(c))];
+      },
+      addExtra(categoria) {
+        if (categoria && !this.listaCategorias().includes(categoria)) {
+          data.extras.push(categoria);
+          persist();
+        }
+      },
+    };
+  })();
 
   function fmtMoney(v) {
     if (v === null || v === undefined || isNaN(v)) return "-";
@@ -28,6 +64,7 @@
     return Number(v).toLocaleString("pt-BR");
   }
   function sanitizeEdle(edle) { return edle.replace(/\//g, "-"); }
+  function loteKey(l) { return `${l.edle}__${l.loteNrAtribuido}`; }
   function statusClass(s) { return "status-" + String(s).replace(/[^A-Za-z]+/g, "-"); }
   function fmtDate(s) {
     if (!s) return "-";
@@ -81,6 +118,7 @@
       l._dataFimPropostas = ed ? ed.dataFimPropostas : null;
       l._dataAberturaLances = ed ? ed.dataAberturaLances : null;
       l._indiceAvalMin = (l.valorMinimo && l.valorAvaliacao) ? (l.valorAvaliacao / l.valorMinimo) : null;
+      l._categoria = MyCategories.get(loteKey(l));
     });
 
     renderStatTiles();
@@ -124,6 +162,16 @@
 
     setupMultiSelect("msTipo", tipoCounts, state.tipoFiltro, "tipo(s)");
     setupMultiSelect("msRecinto", recintoCounts, state.recintoFiltro, "recinto(s)");
+    refreshCategoriaFilter();
+  }
+
+  function refreshCategoriaFilter() {
+    const categoriaCounts = new Map();
+    state.lotes.forEach(l => {
+      const c = l._categoria || SEM_CATEGORIA;
+      categoriaCounts.set(c, (categoriaCounts.get(c) || 0) + 1);
+    });
+    setupMultiSelect("msCategoria", categoriaCounts, state.categoriaFiltro, "categoria(s)");
   }
 
   function setupMultiSelect(containerId, countsMap, selectedSet, unitLabel) {
@@ -233,6 +281,7 @@
       if (state.tipoFiltro.size > 0 && !state.tipoFiltro.has(l.tipo)) return false;
       if (state.recintoFiltro.size > 0 && !(l.recintos || []).some(r => state.recintoFiltro.has(r))) return false;
       if (state.statusFiltro.size > 0 && !state.statusFiltro.has(l._statusEstimado)) return false;
+      if (state.categoriaFiltro.size > 0 && !state.categoriaFiltro.has(l._categoria || SEM_CATEGORIA)) return false;
       if (!isNaN(valorMin) && (l.valorMinimo || 0) < valorMin) return false;
       if (!isNaN(valorMax) && (l.valorMinimo || 0) > valorMax) return false;
       if (permitePF && !l.permitePF) return false;
@@ -250,6 +299,7 @@
         if (k === "dataInicioPropostas") { av = a._dataInicioPropostas; bv = b._dataInicioPropostas; }
         if (k === "dataFimPropostas") { av = a._dataFimPropostas; bv = b._dataFimPropostas; }
         if (k === "dataAberturaLances") { av = a._dataAberturaLances; bv = b._dataAberturaLances; }
+        if (k === "categoria") { av = a._categoria || ""; bv = b._categoria || ""; }
         if (av === null || av === undefined) av = "";
         if (bv === null || bv === undefined) bv = "";
         if (typeof av === "string") return av.localeCompare(bv) * dir;
@@ -312,6 +362,9 @@
       const tr = document.createElement("tr");
       tr.className = "lote-row" + (state.expandedKey === key ? " expanded" : "");
       tr.dataset.key = key;
+      const catOptions = ["", ...MyCategories.listaCategorias()].map(c =>
+        `<option value="${c}" ${l._categoria === c ? "selected" : ""}>${c || "Sem categoria"}</option>`
+      ).join("") + `<option value="__new__">+ Nova categoria...</option>`;
       tr.innerHTML = `
         <td>${l._edital || l.edle}</td>
         <td>${l._cidade || "-"}</td>
@@ -327,15 +380,31 @@
         <td>${fmtDate(l._dataInicioPropostas)}</td>
         <td>${fmtDate(l._dataFimPropostas)}</td>
         <td>${fmtDate(l._dataAberturaLances)}</td>
+        <td class="cat-cell"><select class="cat-select">${catOptions}</select></td>
       `;
       tr.addEventListener("click", () => toggleExpand(l, key));
+      const catSelect = tr.querySelector(".cat-select");
+      catSelect.addEventListener("click", (e) => e.stopPropagation());
+      catSelect.addEventListener("change", (e) => {
+        e.stopPropagation();
+        let val = catSelect.value;
+        if (val === "__new__") {
+          const nome = (window.prompt("Nome da nova categoria:") || "").trim();
+          if (nome) { MyCategories.addExtra(nome); val = nome; }
+          else { val = l._categoria || ""; }
+        }
+        l._categoria = val;
+        MyCategories.set(loteKey(l), val);
+        refreshCategoriaFilter();
+        applyFilters();
+      });
       frag.appendChild(tr);
 
       if (state.expandedKey === key) {
         const trItens = document.createElement("tr");
         trItens.className = "itens-row";
         const td = document.createElement("td");
-        td.colSpan = 14;
+        td.colSpan = 15;
         td.className = "itens-wrap";
         td.id = `itens-${key}`;
         td.innerHTML = `<div class="loading">Carregando itens...</div>`;
@@ -413,14 +482,14 @@
 
   function exportCsv() {
     const header = ["Edital", "Cidade/Unidade", "Tipo", "Recintos", "Lote", "QtdItens", "ValorMinimo", "ValorAvaliacao",
-      "IndiceAvalMinimo", "PermitePF", "StatusEdital", "InicioPropostas", "FimPropostas", "DataLeilao"];
+      "IndiceAvalMinimo", "PermitePF", "StatusEdital", "InicioPropostas", "FimPropostas", "DataLeilao", "MinhaCategoria"];
     const lines = [header.join(";")];
     state.filtered.forEach(l => {
       lines.push([
         l._edital || l.edle, l._cidade || "", l.tipo || "", (l.recintos || []).join(" | "), l.loteNrAtribuido,
         l.qtdItens || 0, l.valorMinimo || 0, l.valorAvaliacao || 0, l._indiceAvalMin ? l._indiceAvalMin.toFixed(2) : "",
         l.permitePF ? "Sim" : "Nao", l._statusEstimado,
-        l._dataInicioPropostas || "", l._dataFimPropostas || "", l._dataAberturaLances || "",
+        l._dataInicioPropostas || "", l._dataFimPropostas || "", l._dataAberturaLances || "", l._categoria || "",
       ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(";"));
     });
     const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -449,8 +518,10 @@
       document.querySelectorAll("#statusChips .chip").forEach(c => c.classList.remove("active"));
       state.tipoFiltro.clear();
       state.recintoFiltro.clear();
+      state.categoriaFiltro.clear();
       document.getElementById("msTipo")._msRefresh();
       document.getElementById("msRecinto")._msRefresh();
+      document.getElementById("msCategoria")._msRefresh();
       applyFilters();
     });
 

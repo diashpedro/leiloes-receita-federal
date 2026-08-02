@@ -277,6 +277,19 @@ table.data tbody tr.lote-row.expanded { background: var(--page); }
 .itens-wrap .price-links a { color: var(--series-1); text-decoration: none; }
 .itens-wrap .price-links a:hover { text-decoration: underline; }
 
+.cat-cell { padding: 4px 6px !important; }
+.cat-select {
+  width: 100%;
+  max-width: 160px;
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+}
+
 .pagination { display: flex; align-items: center; gap: 8px; margin-top: 12px; justify-content: flex-end; font-size: 12.5px; }
 .pagination select { background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; color: var(--text-primary); }
 

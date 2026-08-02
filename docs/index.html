@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leiloes Receita Federal - Painel</title>
-<link rel="stylesheet" href="assets/style.css?v=1">
+<link rel="stylesheet" href="assets/style.css?v=2">
 </head>
 <body>
 <div class="wrap">
@@ -67,6 +67,18 @@
       </div>
 
       <div class="field">
+        <label>Minha categoria</label>
+        <div class="multiselect" id="msCategoria">
+          <button type="button" class="ms-toggle">Todos</button>
+          <div class="ms-panel hidden">
+            <input type="text" class="ms-search" placeholder="Buscar categoria...">
+            <div class="ms-actions"><a href="#" data-act="all">marcar todos</a><a href="#" data-act="none">limpar</a></div>
+            <div class="ms-options"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
         <label>Valor minimo (R$)</label>
         <div class="range-pair">
           <input type="number" id="fValorMin" placeholder="de">
@@ -116,6 +128,7 @@
             <th data-key="dataInicioPropostas">Inicio Propostas</th>
             <th data-key="dataFimPropostas">Fim Propostas</th>
             <th data-key="dataAberturaLances">Data Leilao (Lances)</th>
+            <th data-key="categoria">Minha Categoria</th>
           </tr>
         </thead>
         <tbody id="tblBody"></tbody>
@@ -140,6 +153,6 @@
   </p>
 </div>
 
-<script src="assets/app.js?v=1"></script>
+<script src="assets/app.js?v=2"></script>
 </body>
 </html>
