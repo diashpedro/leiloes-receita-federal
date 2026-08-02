@@ -23,6 +23,12 @@
   const CATEGORIAS_PADRAO = ["Interesse alto", "Avaliar depois", "Talvez", "Descartado"];
   const LS_KEY = "leilaoReceita.categorias.v1";
 
+  // listas completas de valores possiveis (fixas apos o carregamento), usadas para
+  // recalcular quais opcoes ainda tem correspondencia conforme os outros filtros mudam
+  let ALL_TIPOS = [];
+  let ALL_RECINTOS = [];
+  let ALL_CIDADES = [];
+
   // ---- persistencia local (localStorage) das categorias que o usuario define por lote ----
   // fica no navegador dele, nao no GitHub - cada pessoa que abre o dashboard tem a sua propria lista.
   const MyCategories = (function () {
@@ -145,33 +151,79 @@
   }
 
   function populateFilterOptions() {
-    const cidades = new Set();
-    const tipoCounts = new Map();
-    const recintoCounts = new Map();
-    state.lotes.forEach(l => {
-      if (l._cidade) cidades.add(l._cidade);
-      if (l.tipo) tipoCounts.set(l.tipo, (tipoCounts.get(l.tipo) || 0) + 1);
-      (l.recintos || []).forEach(r => recintoCounts.set(r, (recintoCounts.get(r) || 0) + 1));
-    });
-    const selCidade = document.getElementById("fCidade");
-    [...cidades].sort().forEach(c => {
-      const opt = document.createElement("option");
-      opt.value = c; opt.textContent = c;
-      selCidade.appendChild(opt);
-    });
+    ALL_TIPOS = [...new Set(state.lotes.map(l => l.tipo).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    ALL_RECINTOS = [...new Set(state.lotes.flatMap(l => l.recintos || []))].sort((a, b) => a.localeCompare(b));
+    ALL_CIDADES = [...new Set(state.lotes.map(l => l._cidade).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
-    setupMultiSelect("msTipo", tipoCounts, state.tipoFiltro, "tipo(s)");
-    setupMultiSelect("msRecinto", recintoCounts, state.recintoFiltro, "recinto(s)");
-    refreshCategoriaFilter();
+    // registra os widgets (uma unica vez - liga os listeners); as contagens reais de
+    // cada opcao sao preenchidas logo depois, em applyFilters() -> refreshFilterWidgets(),
+    // e recalculadas a cada mudanca de filtro (efeito cascata / cross-filter estilo BI).
+    setupMultiSelect("msTipo", new Map(), state.tipoFiltro, "tipo(s)");
+    setupMultiSelect("msRecinto", new Map(), state.recintoFiltro, "recinto(s)");
+    setupMultiSelect("msCategoria", new Map(), state.categoriaFiltro, "categoria(s)");
   }
 
-  function refreshCategoriaFilter() {
-    const categoriaCounts = new Map();
+  // ---- predicado de filtro parametrizado: "skip" deixa de fora UMA dimensao, pra podermos
+  // calcular "quantos lotes bateriam se eu ignorasse so este filtro" (cross-filtering) ----
+  function currentFilterValues() {
+    return {
+      busca: document.getElementById("fBusca").value.trim().toLowerCase(),
+      cidade: document.getElementById("fCidade").value,
+      valorMin: parseFloat(document.getElementById("fValorMin").value),
+      valorMax: parseFloat(document.getElementById("fValorMax").value),
+      permitePF: document.getElementById("fPermitePF").checked,
+    };
+  }
+
+  function matchesLote(l, fv, skip) {
+    if (skip !== "busca" && fv.busca) {
+      const hay = `${l._edital || ""} ${l.tipo || ""} ${l._cidade || ""} ${l._orgao || ""}`.toLowerCase();
+      if (!hay.includes(fv.busca)) return false;
+    }
+    if (skip !== "cidade" && fv.cidade && l._cidade !== fv.cidade) return false;
+    if (skip !== "tipo" && state.tipoFiltro.size > 0 && !state.tipoFiltro.has(l.tipo)) return false;
+    if (skip !== "recinto" && state.recintoFiltro.size > 0 && !(l.recintos || []).some(r => state.recintoFiltro.has(r))) return false;
+    if (skip !== "status" && state.statusFiltro.size > 0 && !state.statusFiltro.has(l._statusEstimado)) return false;
+    if (skip !== "categoria" && state.categoriaFiltro.size > 0 && !state.categoriaFiltro.has(l._categoria || SEM_CATEGORIA)) return false;
+    if (skip !== "valor" && !isNaN(fv.valorMin) && (l.valorMinimo || 0) < fv.valorMin) return false;
+    if (skip !== "valor" && !isNaN(fv.valorMax) && (l.valorMinimo || 0) > fv.valorMax) return false;
+    if (skip !== "pf" && fv.permitePF && !l.permitePF) return false;
+    return true;
+  }
+
+  function refreshFilterWidgets(fv) {
+    const tipoCounts = new Map(ALL_TIPOS.map(t => [t, 0]));
+    const recintoCounts = new Map(ALL_RECINTOS.map(r => [r, 0]));
+    const cidadeCounts = new Map(ALL_CIDADES.map(c => [c, 0]));
+    const categoriaCounts = new Map([SEM_CATEGORIA, ...MyCategories.listaCategorias()].map(c => [c, 0]));
+
     state.lotes.forEach(l => {
-      const c = l._categoria || SEM_CATEGORIA;
-      categoriaCounts.set(c, (categoriaCounts.get(c) || 0) + 1);
+      if (l.tipo && matchesLote(l, fv, "tipo")) tipoCounts.set(l.tipo, tipoCounts.get(l.tipo) + 1);
+      if (matchesLote(l, fv, "recinto")) {
+        (l.recintos || []).forEach(r => recintoCounts.set(r, (recintoCounts.get(r) || 0) + 1));
+      }
+      if (l._cidade && matchesLote(l, fv, "cidade")) cidadeCounts.set(l._cidade, cidadeCounts.get(l._cidade) + 1);
+      if (matchesLote(l, fv, "categoria")) {
+        const c = l._categoria || SEM_CATEGORIA;
+        categoriaCounts.set(c, (categoriaCounts.get(c) || 0) + 1);
+      }
     });
-    setupMultiSelect("msCategoria", categoriaCounts, state.categoriaFiltro, "categoria(s)");
+
+    document.getElementById("msTipo")._msUpdateCounts(tipoCounts);
+    document.getElementById("msRecinto")._msUpdateCounts(recintoCounts);
+    document.getElementById("msCategoria")._msUpdateCounts(categoriaCounts);
+    updateCidadeSelect(cidadeCounts);
+  }
+
+  function updateCidadeSelect(cidadeCounts) {
+    const sel = document.getElementById("fCidade");
+    const current = sel.value;
+    const entries = [...cidadeCounts.entries()]
+      .filter(([c, cnt]) => cnt > 0 || c === current)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    sel.innerHTML = `<option value="">Todas</option>` + entries.map(([c, cnt]) =>
+      `<option value="${c.replace(/"/g, "&quot;")}" ${c === current ? "selected" : ""}>${c} (${fmtNum(cnt)})</option>`
+    ).join("");
   }
 
   function setupMultiSelect(containerId, countsMap, selectedSet, unitLabel) {
@@ -180,11 +232,14 @@
     const panel = root.querySelector(".ms-panel");
     const search = root.querySelector(".ms-search");
     const optionsEl = root.querySelector(".ms-options");
-    const entries = [...countsMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    let entries = [...countsMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
     function renderOptions(filterText) {
       const ft = (filterText || "").toLowerCase();
-      const visible = entries.filter(([label]) => label.toLowerCase().includes(ft));
+      // some da lista quem nao tem mais correspondencia (count 0) sob os filtros atuais,
+      // exceto o que ja estiver marcado - assim a selecao do usuario nunca some sem aviso.
+      const visible = entries.filter(([label, count]) =>
+        (count > 0 || selectedSet.has(label)) && label.toLowerCase().includes(ft));
       if (visible.length === 0) {
         optionsEl.innerHTML = `<div class="ms-empty">Nenhum resultado.</div>`;
         return;
@@ -243,6 +298,11 @@
     renderOptions("");
     updateToggleLabel();
     root._msRefresh = () => { renderOptions(search.value); updateToggleLabel(); };
+    root._msUpdateCounts = (newCountsMap) => {
+      entries = [...newCountsMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      renderOptions(search.value);
+      updateToggleLabel();
+    };
   }
 
   document.addEventListener("click", () => {
@@ -266,27 +326,8 @@
   }
 
   function applyFilters() {
-    const busca = document.getElementById("fBusca").value.trim().toLowerCase();
-    const cidade = document.getElementById("fCidade").value;
-    const valorMin = parseFloat(document.getElementById("fValorMin").value);
-    const valorMax = parseFloat(document.getElementById("fValorMax").value);
-    const permitePF = document.getElementById("fPermitePF").checked;
-
-    state.filtered = state.lotes.filter(l => {
-      if (busca) {
-        const hay = `${l._edital || ""} ${l.tipo || ""} ${l._cidade || ""} ${l._orgao || ""}`.toLowerCase();
-        if (!hay.includes(busca)) return false;
-      }
-      if (cidade && l._cidade !== cidade) return false;
-      if (state.tipoFiltro.size > 0 && !state.tipoFiltro.has(l.tipo)) return false;
-      if (state.recintoFiltro.size > 0 && !(l.recintos || []).some(r => state.recintoFiltro.has(r))) return false;
-      if (state.statusFiltro.size > 0 && !state.statusFiltro.has(l._statusEstimado)) return false;
-      if (state.categoriaFiltro.size > 0 && !state.categoriaFiltro.has(l._categoria || SEM_CATEGORIA)) return false;
-      if (!isNaN(valorMin) && (l.valorMinimo || 0) < valorMin) return false;
-      if (!isNaN(valorMax) && (l.valorMinimo || 0) > valorMax) return false;
-      if (permitePF && !l.permitePF) return false;
-      return true;
-    });
+    const fv = currentFilterValues();
+    state.filtered = state.lotes.filter(l => matchesLote(l, fv, null));
 
     if (state.sortKey) {
       const k = state.sortKey, dir = state.sortDir;
@@ -308,6 +349,7 @@
     }
 
     state.page = 1;
+    refreshFilterWidgets(fv);
     renderCharts();
     renderTable();
   }
@@ -395,7 +437,6 @@
         }
         l._categoria = val;
         MyCategories.set(loteKey(l), val);
-        refreshCategoriaFilter();
         applyFilters();
       });
       frag.appendChild(tr);
@@ -519,9 +560,6 @@
       state.tipoFiltro.clear();
       state.recintoFiltro.clear();
       state.categoriaFiltro.clear();
-      document.getElementById("msTipo")._msRefresh();
-      document.getElementById("msRecinto")._msRefresh();
-      document.getElementById("msCategoria")._msRefresh();
       applyFilters();
     });
 
