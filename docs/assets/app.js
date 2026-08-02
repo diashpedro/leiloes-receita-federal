@@ -348,22 +348,38 @@
     tbody.appendChild(frag);
   }
 
+  function fetchItensEdle(edle) {
+    // cacheia a Promise (nao so o resultado) pra cliques repetidos/rapidos no mesmo
+    // edital compartilharem uma unica requisicao em vez de disparar varias em paralelo.
+    if (state.itensCache.has(edle)) return state.itensCache.get(edle);
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000));
+    const p = Promise.race([
+      fetch(`data/itens/${sanitizeEdle(edle)}.json`).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+      timeout,
+    ]).catch(err => {
+      state.itensCache.delete(edle); // nao guarda falha em cache, permite tentar de novo
+      throw err;
+    });
+    state.itensCache.set(edle, p);
+    return p;
+  }
+
   async function loadItensFor(lote, key) {
-    let all = state.itensCache.get(lote.edle);
-    if (!all) {
-      try {
-        all = await fetch(`data/itens/${sanitizeEdle(lote.edle)}.json`).then(r => {
-          if (!r.ok) throw new Error("not found");
-          return r.json();
-        });
-      } catch (e) {
-        all = [];
+    const cell = document.getElementById(`itens-${key}`);
+    let all;
+    try {
+      all = await fetchItensEdle(lote.edle);
+    } catch (e) {
+      if (cell && document.getElementById(`itens-${key}`)) {
+        cell.innerHTML = `<div class="loading">Falha ao carregar itens (${e.message}). Clique no lote de novo para tentar outra vez.</div>`;
       }
-      state.itensCache.set(lote.edle, all);
+      return;
     }
     const itens = all.filter(i => i.loteNrAtribuido === lote.loteNrAtribuido);
-    const cell = document.getElementById(`itens-${key}`);
-    if (!cell) return;
+    if (!document.getElementById(`itens-${key}`)) return; // usuario fechou/trocou de lote enquanto carregava
     if (itens.length === 0) {
       cell.innerHTML = `<div class="loading">Nenhum item detalhado disponivel para este lote.</div>`;
       return;
