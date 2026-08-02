@@ -29,6 +29,25 @@
   }
   function sanitizeEdle(edle) { return edle.replace(/\//g, "-"); }
   function statusClass(s) { return "status-" + String(s).replace(/[^A-Za-z]+/g, "-"); }
+  function fmtDate(s) {
+    if (!s) return "-";
+    const [d, t] = String(s).split(" ");
+    const parts = (d || "").split("-");
+    if (parts.length !== 3) return s;
+    const [y, m, day] = parts;
+    return `${day}/${m}/${y}${t ? " " + t : ""}`;
+  }
+  function fmtIndice(v) { return (v === null || v === undefined || isNaN(v)) ? "-" : v.toFixed(2) + "x"; }
+  function cleanDescricao(s) { return (s || "").replace(/\/+\s*$/, "").trim(); }
+  function mlSearchUrl(q) {
+    const slug = q.toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return `https://lista.mercadolivre.com.br/${encodeURIComponent(slug)}`;
+  }
+  function googleShoppingUrl(q) {
+    return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
+  }
 
   async function loadMeta() {
     try {
@@ -58,6 +77,10 @@
       l._cidade = l.cidade || (ed ? ed.cidade : null);
       l._orgao = ed ? ed.orgao : null;
       l._statusEstimado = ed ? ed.statusEstimado : "Desconhecido";
+      l._dataInicioPropostas = ed ? ed.dataInicioPropostas : null;
+      l._dataFimPropostas = ed ? ed.dataFimPropostas : null;
+      l._dataAberturaLances = ed ? ed.dataAberturaLances : null;
+      l._indiceAvalMin = (l.valorMinimo && l.valorAvaliacao) ? (l.valorAvaliacao / l.valorMinimo) : null;
     });
 
     renderStatTiles();
@@ -223,6 +246,10 @@
         if (k === "cidade") { av = a._cidade; bv = b._cidade; }
         if (k === "statusEstimado") { av = a._statusEstimado; bv = b._statusEstimado; }
         if (k === "recintos") { av = (a.recintos || []).join(", "); bv = (b.recintos || []).join(", "); }
+        if (k === "indiceAvalMin") { av = a._indiceAvalMin; bv = b._indiceAvalMin; }
+        if (k === "dataInicioPropostas") { av = a._dataInicioPropostas; bv = b._dataInicioPropostas; }
+        if (k === "dataFimPropostas") { av = a._dataFimPropostas; bv = b._dataFimPropostas; }
+        if (k === "dataAberturaLances") { av = a._dataAberturaLances; bv = b._dataAberturaLances; }
         if (av === null || av === undefined) av = "";
         if (bv === null || bv === undefined) bv = "";
         if (typeof av === "string") return av.localeCompare(bv) * dir;
@@ -294,8 +321,12 @@
         <td>${fmtNum(l.qtdItens)}</td>
         <td>${fmtMoney(l.valorMinimo)}</td>
         <td>${fmtMoney(l.valorAvaliacao)}</td>
+        <td>${fmtIndice(l._indiceAvalMin)}</td>
         <td>${l.permitePF ? "Sim" : "Nao"}</td>
         <td><span class="badge ${statusClass(l._statusEstimado)}">${l._statusEstimado}</span></td>
+        <td>${fmtDate(l._dataInicioPropostas)}</td>
+        <td>${fmtDate(l._dataFimPropostas)}</td>
+        <td>${fmtDate(l._dataAberturaLances)}</td>
       `;
       tr.addEventListener("click", () => toggleExpand(l, key));
       frag.appendChild(tr);
@@ -304,7 +335,7 @@
         const trItens = document.createElement("tr");
         trItens.className = "itens-row";
         const td = document.createElement("td");
-        td.colSpan = 10;
+        td.colSpan = 14;
         td.className = "itens-wrap";
         td.id = `itens-${key}`;
         td.innerHTML = `<div class="loading">Carregando itens...</div>`;
@@ -339,14 +370,22 @@
     }
     cell.innerHTML = `
       <table>
-        <thead><tr><th>Recinto</th><th>Qtd</th><th>Un.</th><th>Descricao</th></tr></thead>
+        <thead><tr><th>Recinto</th><th>Qtd</th><th>Un.</th><th>Descricao</th><th>Preco de mercado</th></tr></thead>
         <tbody>
-          ${itens.map(i => `<tr>
-            <td>${i.recintoArmazenador || "-"}</td>
-            <td>${fmtNum(i.quantidade)}</td>
-            <td>${i.unMedida || "-"}</td>
-            <td>${(i.descricao || "").replace(/\/+$/, "")}</td>
-          </tr>`).join("")}
+          ${itens.map(i => {
+            const desc = cleanDescricao(i.descricao);
+            return `<tr>
+              <td>${i.recintoArmazenador || "-"}</td>
+              <td>${fmtNum(i.quantidade)}</td>
+              <td>${i.unMedida || "-"}</td>
+              <td>${desc}</td>
+              <td class="price-links">
+                <a href="${mlSearchUrl(desc)}" target="_blank" rel="noopener">Mercado Livre</a>
+                &middot;
+                <a href="${googleShoppingUrl(desc)}" target="_blank" rel="noopener">Google Shopping</a>
+              </td>
+            </tr>`;
+          }).join("")}
         </tbody>
       </table>`;
   }
@@ -357,13 +396,15 @@
   }
 
   function exportCsv() {
-    const header = ["Edital", "Cidade/Unidade", "Tipo", "Lote", "QtdItens", "ValorMinimo", "ValorAvaliacao", "PermitePF", "StatusEdital"];
+    const header = ["Edital", "Cidade/Unidade", "Tipo", "Recintos", "Lote", "QtdItens", "ValorMinimo", "ValorAvaliacao",
+      "IndiceAvalMinimo", "PermitePF", "StatusEdital", "InicioPropostas", "FimPropostas", "DataLeilao"];
     const lines = [header.join(";")];
     state.filtered.forEach(l => {
       lines.push([
-        l._edital || l.edle, l._cidade || "", l.tipo || "", l.loteNrAtribuido,
-        l.qtdItens || 0, l.valorMinimo || 0, l.valorAvaliacao || 0,
+        l._edital || l.edle, l._cidade || "", l.tipo || "", (l.recintos || []).join(" | "), l.loteNrAtribuido,
+        l.qtdItens || 0, l.valorMinimo || 0, l.valorAvaliacao || 0, l._indiceAvalMin ? l._indiceAvalMin.toFixed(2) : "",
         l.permitePF ? "Sim" : "Nao", l._statusEstimado,
+        l._dataInicioPropostas || "", l._dataFimPropostas || "", l._dataAberturaLances || "",
       ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(";"));
     });
     const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
