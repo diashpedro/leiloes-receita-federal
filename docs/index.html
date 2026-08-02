@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leiloes Receita Federal - Painel</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Leiloes da Receita Federal</h1>
+    <p>Painel de exploracao dos editais, lotes e itens raspados do portal publico do Sistema Leilao Eletronico (SLE).</p>
+  </header>
+
+  <section class="stat-row" id="statRow"></section>
+
+  <section class="panel">
+    <div class="filters" id="filters">
+      <div class="field" style="min-width:260px;">
+        <label for="fBusca">Busca (edital, tipo, cidade, orgao)</label>
+        <input type="text" id="fBusca" placeholder="ex: iPad, SAO PAULO, informatica...">
+      </div>
+
+      <div class="field">
+        <label for="fCidade">Cidade / Unidade</label>
+        <select id="fCidade"><option value="">Todas</option></select>
+      </div>
+
+      <div class="field">
+        <label for="fTipo">Tipo de lote</label>
+        <select id="fTipo"><option value="">Todos</option></select>
+      </div>
+
+      <div class="field">
+        <label>Status do edital</label>
+        <div class="chip-group" id="statusChips"></div>
+      </div>
+
+      <div class="field">
+        <label>Valor minimo (R$)</label>
+        <div class="range-pair">
+          <input type="number" id="fValorMin" placeholder="de">
+          <span>-</span>
+          <input type="number" id="fValorMax" placeholder="ate">
+        </div>
+      </div>
+
+      <div class="field checkbox-field">
+        <input type="checkbox" id="fPermitePF">
+        <label for="fPermitePF">Permite pessoa fisica</label>
+      </div>
+
+      <button class="btn" id="btnLimpar">Limpar filtros</button>
+      <button class="btn primary" id="btnCsv">Exportar CSV (filtrado)</button>
+      <span class="result-count" id="resultCount"></span>
+    </div>
+  </section>
+
+  <section class="charts-row">
+    <div class="panel">
+      <p class="chart-title">Top 10 tipos de lote (na selecao atual)</p>
+      <div class="barlist" id="chartTipos"></div>
+    </div>
+    <div class="panel">
+      <p class="chart-title">Editais por status estimado (na selecao atual)</p>
+      <div class="barlist" id="chartStatus"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div style="overflow-x:auto;">
+      <table class="data" id="tblLotes">
+        <thead>
+          <tr>
+            <th data-key="edle">Edital</th>
+            <th data-key="cidade">Cidade / Unidade</th>
+            <th data-key="tipo">Tipo</th>
+            <th data-key="loteNrAtribuido">Lote #</th>
+            <th data-key="qtdItens">Itens</th>
+            <th data-key="valorMinimo">Vlr Minimo (R$)</th>
+            <th data-key="valorAvaliacao">Vlr Avaliacao (R$)</th>
+            <th data-key="permitePF">PF?</th>
+            <th data-key="statusEstimado">Status Edital</th>
+          </tr>
+        </thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <span id="pageInfo"></span>
+      <button class="btn" id="btnPrev">&larr; Anterior</button>
+      <button class="btn" id="btnNext">Proxima &rarr;</button>
+      <select id="pageSize">
+        <option value="50">50 / pagina</option>
+        <option value="100" selected>100 / pagina</option>
+        <option value="250">250 / pagina</option>
+      </select>
+    </div>
+  </section>
+
+  <p class="footer-note">
+    Dados publicos do Sistema Leilao Eletronico da Receita Federal (www25.receita.fazenda.gov.br/sle-sociedade).
+    Gerado automaticamente a partir de um scraper local; pode conter lotes desatualizados ou indisponiveis no momento da consulta.
+    Clique em uma linha da tabela para ver os itens do lote.
+  </p>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
