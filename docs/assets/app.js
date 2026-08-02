@@ -448,7 +448,7 @@
         td.colSpan = 15;
         td.className = "itens-wrap";
         td.id = `itens-${key}`;
-        td.innerHTML = `<div class="loading">Carregando itens...</div>`;
+        td.innerHTML = `<div class="loading" data-loading="1">Carregando itens... (0s)</div>`;
         trItens.appendChild(td);
         frag.appendChild(trItens);
         loadItensFor(l, key);
@@ -478,42 +478,56 @@
   }
 
   async function loadItensFor(lote, key) {
-    const cell = document.getElementById(`itens-${key}`);
-    let all;
+    // conta os segundos visivelmente, pra ficar obvio que a pagina nao travou
+    // (e pra gente saber, se alguem reportar, se realmente passou de 20s sem erro)
+    let seg = 0;
+    const tick = setInterval(() => {
+      seg += 1;
+      const cellTick = document.getElementById(`itens-${key}`);
+      if (!cellTick) { clearInterval(tick); return; }
+      const loadingEl = cellTick.querySelector(".loading[data-loading]");
+      if (loadingEl) loadingEl.textContent = `Carregando itens... (${seg}s)`;
+    }, 1000);
+
     try {
-      all = await fetchItensEdle(lote.edle);
-    } catch (e) {
-      if (cell && document.getElementById(`itens-${key}`)) {
-        cell.innerHTML = `<div class="loading">Falha ao carregar itens (${e.message}). Clique no lote de novo para tentar outra vez.</div>`;
+      const all = await fetchItensEdle(lote.edle);
+      const itens = all.filter(i => i.loteNrAtribuido === lote.loteNrAtribuido);
+      clearInterval(tick);
+      const cell = document.getElementById(`itens-${key}`); // busca fresca no momento de escrever, nao antes do await
+      if (!cell) return; // usuario fechou/trocou de lote enquanto carregava
+      if (itens.length === 0) {
+        cell.innerHTML = `<div class="loading">Nenhum item detalhado disponivel para este lote.</div>`;
+        return;
       }
-      return;
+      cell.innerHTML = `
+        <table>
+          <thead><tr><th>Recinto</th><th>Qtd</th><th>Un.</th><th>Descricao</th><th>Preco de mercado</th></tr></thead>
+          <tbody>
+            ${itens.map(i => {
+              const desc = cleanDescricao(i.descricao);
+              return `<tr>
+                <td>${i.recintoArmazenador || "-"}</td>
+                <td>${fmtNum(i.quantidade)}</td>
+                <td>${i.unMedida || "-"}</td>
+                <td>${desc}</td>
+                <td class="price-links">
+                  <a href="${mlSearchUrl(desc)}" target="_blank" rel="noopener">Mercado Livre</a>
+                  &middot;
+                  <a href="${googleShoppingUrl(desc)}" target="_blank" rel="noopener">Google Shopping</a>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+    } catch (e) {
+      // pega QUALQUER erro (rede, timeout, ou um bug inesperado no processamento) -
+      // nunca deixa a linha travada em "Carregando itens..." sem explicacao.
+      clearInterval(tick);
+      const cellErr = document.getElementById(`itens-${key}`);
+      if (cellErr) {
+        cellErr.innerHTML = `<div class="loading">Falha ao carregar itens (${e.message || e}). Clique no lote de novo para tentar outra vez.</div>`;
+      }
     }
-    const itens = all.filter(i => i.loteNrAtribuido === lote.loteNrAtribuido);
-    if (!document.getElementById(`itens-${key}`)) return; // usuario fechou/trocou de lote enquanto carregava
-    if (itens.length === 0) {
-      cell.innerHTML = `<div class="loading">Nenhum item detalhado disponivel para este lote.</div>`;
-      return;
-    }
-    cell.innerHTML = `
-      <table>
-        <thead><tr><th>Recinto</th><th>Qtd</th><th>Un.</th><th>Descricao</th><th>Preco de mercado</th></tr></thead>
-        <tbody>
-          ${itens.map(i => {
-            const desc = cleanDescricao(i.descricao);
-            return `<tr>
-              <td>${i.recintoArmazenador || "-"}</td>
-              <td>${fmtNum(i.quantidade)}</td>
-              <td>${i.unMedida || "-"}</td>
-              <td>${desc}</td>
-              <td class="price-links">
-                <a href="${mlSearchUrl(desc)}" target="_blank" rel="noopener">Mercado Livre</a>
-                &middot;
-                <a href="${googleShoppingUrl(desc)}" target="_blank" rel="noopener">Google Shopping</a>
-              </td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>`;
   }
 
   function toggleExpand(lote, key) {
