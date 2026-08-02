@@ -9,8 +9,18 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <h1>Leiloes da Receita Federal</h1>
-    <p>Painel de exploracao dos editais, lotes e itens raspados do portal publico do Sistema Leilao Eletronico (SLE).</p>
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h1>Leiloes da Receita Federal</h1>
+        <p>Painel de exploracao dos editais, lotes e itens raspados do portal publico do Sistema Leilao Eletronico (SLE).</p>
+        <p id="lastUpdated" style="font-size:11.5px; color:var(--text-muted); margin-top:2px;"></p>
+      </div>
+      <a class="btn primary" style="text-decoration:none; white-space:nowrap;"
+         href="https://github.com/diashpedro/leiloes-receita-federal/actions/workflows/update-data.yml"
+         target="_blank" rel="noopener" title="Abre o GitHub Actions - requer login com acesso ao repositorio para disparar manualmente. Roda sozinho todo dia as 00h (Brasilia).">
+        &#8635; Atualizar dados
+      </a>
+    </div>
   </header>
 
   <section class="stat-row" id="statRow"></section>
@@ -28,8 +38,27 @@
       </div>
 
       <div class="field">
-        <label for="fTipo">Tipo de lote</label>
-        <select id="fTipo"><option value="">Todos</option></select>
+        <label>Tipo de lote</label>
+        <div class="multiselect" id="msTipo">
+          <button type="button" class="ms-toggle">Todos</button>
+          <div class="ms-panel hidden">
+            <input type="text" class="ms-search" placeholder="Buscar tipo...">
+            <div class="ms-actions"><a href="#" data-act="all">marcar todos</a><a href="#" data-act="none">limpar</a></div>
+            <div class="ms-options"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Local de armazenamento</label>
+        <div class="multiselect" id="msRecinto">
+          <button type="button" class="ms-toggle">Todos</button>
+          <div class="ms-panel hidden">
+            <input type="text" class="ms-search" placeholder="Buscar recinto...">
+            <div class="ms-actions"><a href="#" data-act="all">marcar todos</a><a href="#" data-act="none">limpar</a></div>
+            <div class="ms-options"></div>
+          </div>
+        </div>
       </div>
 
       <div class="field">
@@ -76,6 +105,7 @@
             <th data-key="edle">Edital</th>
             <th data-key="cidade">Cidade / Unidade</th>
             <th data-key="tipo">Tipo</th>
+            <th data-key="recintos">Local de Armazenamento</th>
             <th data-key="loteNrAtribuido">Lote #</th>
             <th data-key="qtdItens">Itens</th>
             <th data-key="valorMinimo">Vlr Minimo (R$)</th>

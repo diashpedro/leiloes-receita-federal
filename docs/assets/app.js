@@ -13,6 +13,8 @@
     itensCache: new Map(),
     expandedKey: null,
     statusFiltro: new Set(),
+    tipoFiltro: new Set(),
+    recintoFiltro: new Set(),
   };
 
   const STATUS_ORDER = ["Agendado", "Recebendo Propostas", "Em Disputa/Lances", "Encerrado", "Desconhecido"];
@@ -28,7 +30,19 @@
   function sanitizeEdle(edle) { return edle.replace(/\//g, "-"); }
   function statusClass(s) { return "status-" + String(s).replace(/[^A-Za-z]+/g, "-"); }
 
+  async function loadMeta() {
+    try {
+      const meta = await fetch("data/meta.json").then(r => r.json());
+      if (meta.geradoEm) {
+        const dt = new Date(meta.geradoEm);
+        document.getElementById("lastUpdated").textContent =
+          "Dados atualizados em " + dt.toLocaleString("pt-BR");
+      }
+    } catch (e) { /* meta.json opcional */ }
+  }
+
   async function loadData() {
+    loadMeta();
     const [editais, lotes] = await Promise.all([
       fetch("data/editais.json").then(r => r.json()),
       fetch("data/lotes.json").then(r => r.json()),
@@ -71,10 +85,12 @@
 
   function populateFilterOptions() {
     const cidades = new Set();
-    const tipos = new Set();
+    const tipoCounts = new Map();
+    const recintoCounts = new Map();
     state.lotes.forEach(l => {
       if (l._cidade) cidades.add(l._cidade);
-      if (l.tipo) tipos.add(l.tipo);
+      if (l.tipo) tipoCounts.set(l.tipo, (tipoCounts.get(l.tipo) || 0) + 1);
+      (l.recintos || []).forEach(r => recintoCounts.set(r, (recintoCounts.get(r) || 0) + 1));
     });
     const selCidade = document.getElementById("fCidade");
     [...cidades].sort().forEach(c => {
@@ -82,13 +98,85 @@
       opt.value = c; opt.textContent = c;
       selCidade.appendChild(opt);
     });
-    const selTipo = document.getElementById("fTipo");
-    [...tipos].sort().forEach(t => {
-      const opt = document.createElement("option");
-      opt.value = t; opt.textContent = t;
-      selTipo.appendChild(opt);
-    });
+
+    setupMultiSelect("msTipo", tipoCounts, state.tipoFiltro, "tipo(s)");
+    setupMultiSelect("msRecinto", recintoCounts, state.recintoFiltro, "recinto(s)");
   }
+
+  function setupMultiSelect(containerId, countsMap, selectedSet, unitLabel) {
+    const root = document.getElementById(containerId);
+    const toggle = root.querySelector(".ms-toggle");
+    const panel = root.querySelector(".ms-panel");
+    const search = root.querySelector(".ms-search");
+    const optionsEl = root.querySelector(".ms-options");
+    const entries = [...countsMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+    function renderOptions(filterText) {
+      const ft = (filterText || "").toLowerCase();
+      const visible = entries.filter(([label]) => label.toLowerCase().includes(ft));
+      if (visible.length === 0) {
+        optionsEl.innerHTML = `<div class="ms-empty">Nenhum resultado.</div>`;
+        return;
+      }
+      optionsEl.innerHTML = visible.map(([label, count]) => `
+        <label class="ms-option">
+          <input type="checkbox" value="${label.replace(/"/g, "&quot;")}" ${selectedSet.has(label) ? "checked" : ""}>
+          <span>${label}</span>
+          <span class="cnt">${fmtNum(count)}</span>
+        </label>`).join("");
+      optionsEl.querySelectorAll("input[type=checkbox]").forEach(cb => {
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedSet.add(cb.value); else selectedSet.delete(cb.value);
+          updateToggleLabel();
+          state.page = 1;
+          applyFilters();
+        });
+      });
+    }
+
+    function updateToggleLabel() {
+      if (selectedSet.size === 0) {
+        toggle.textContent = "Todos";
+        root.classList.remove("has-selection");
+      } else {
+        toggle.textContent = `${selectedSet.size} ${unitLabel} selecionado(s)`;
+        root.classList.add("has-selection");
+      }
+    }
+
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = panel.classList.contains("hidden");
+      document.querySelectorAll(".multiselect .ms-panel").forEach(p => p.classList.add("hidden"));
+      if (willOpen) { panel.classList.remove("hidden"); search.value = ""; renderOptions(""); search.focus(); }
+    });
+    panel.addEventListener("click", (e) => e.stopPropagation());
+    search.addEventListener("input", () => renderOptions(search.value));
+    root.querySelector('[data-act="all"]').addEventListener("click", (e) => {
+      e.preventDefault();
+      entries.forEach(([label]) => selectedSet.add(label));
+      renderOptions(search.value);
+      updateToggleLabel();
+      state.page = 1;
+      applyFilters();
+    });
+    root.querySelector('[data-act="none"]').addEventListener("click", (e) => {
+      e.preventDefault();
+      selectedSet.clear();
+      renderOptions(search.value);
+      updateToggleLabel();
+      state.page = 1;
+      applyFilters();
+    });
+
+    renderOptions("");
+    updateToggleLabel();
+    root._msRefresh = () => { renderOptions(search.value); updateToggleLabel(); };
+  }
+
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".multiselect .ms-panel").forEach(p => p.classList.add("hidden"));
+  });
 
   function renderStatusChips() {
     const el = document.getElementById("statusChips");
@@ -109,7 +197,6 @@
   function applyFilters() {
     const busca = document.getElementById("fBusca").value.trim().toLowerCase();
     const cidade = document.getElementById("fCidade").value;
-    const tipo = document.getElementById("fTipo").value;
     const valorMin = parseFloat(document.getElementById("fValorMin").value);
     const valorMax = parseFloat(document.getElementById("fValorMax").value);
     const permitePF = document.getElementById("fPermitePF").checked;
@@ -120,7 +207,8 @@
         if (!hay.includes(busca)) return false;
       }
       if (cidade && l._cidade !== cidade) return false;
-      if (tipo && l.tipo !== tipo) return false;
+      if (state.tipoFiltro.size > 0 && !state.tipoFiltro.has(l.tipo)) return false;
+      if (state.recintoFiltro.size > 0 && !(l.recintos || []).some(r => state.recintoFiltro.has(r))) return false;
       if (state.statusFiltro.size > 0 && !state.statusFiltro.has(l._statusEstimado)) return false;
       if (!isNaN(valorMin) && (l.valorMinimo || 0) < valorMin) return false;
       if (!isNaN(valorMax) && (l.valorMinimo || 0) > valorMax) return false;
@@ -134,6 +222,7 @@
         let av = a[k], bv = b[k];
         if (k === "cidade") { av = a._cidade; bv = b._cidade; }
         if (k === "statusEstimado") { av = a._statusEstimado; bv = b._statusEstimado; }
+        if (k === "recintos") { av = (a.recintos || []).join(", "); bv = (b.recintos || []).join(", "); }
         if (av === null || av === undefined) av = "";
         if (bv === null || bv === undefined) bv = "";
         if (typeof av === "string") return av.localeCompare(bv) * dir;
@@ -200,6 +289,7 @@
         <td>${l._edital || l.edle}</td>
         <td>${l._cidade || "-"}</td>
         <td>${l.tipo || "-"}</td>
+        <td>${(l.recintos && l.recintos.length) ? l.recintos.join(", ") : "-"}</td>
         <td>${l.loteNrAtribuido}</td>
         <td>${fmtNum(l.qtdItens)}</td>
         <td>${fmtMoney(l.valorMinimo)}</td>
@@ -214,7 +304,7 @@
         const trItens = document.createElement("tr");
         trItens.className = "itens-row";
         const td = document.createElement("td");
-        td.colSpan = 9;
+        td.colSpan = 10;
         td.className = "itens-wrap";
         td.id = `itens-${key}`;
         td.innerHTML = `<div class="loading">Carregando itens...</div>`;
@@ -295,12 +385,15 @@
     document.getElementById("btnLimpar").addEventListener("click", () => {
       document.getElementById("fBusca").value = "";
       document.getElementById("fCidade").value = "";
-      document.getElementById("fTipo").value = "";
       document.getElementById("fValorMin").value = "";
       document.getElementById("fValorMax").value = "";
       document.getElementById("fPermitePF").checked = false;
       state.statusFiltro.clear();
       document.querySelectorAll("#statusChips .chip").forEach(c => c.classList.remove("active"));
+      state.tipoFiltro.clear();
+      state.recintoFiltro.clear();
+      document.getElementById("msTipo")._msRefresh();
+      document.getElementById("msRecinto")._msRefresh();
       applyFilters();
     });
 

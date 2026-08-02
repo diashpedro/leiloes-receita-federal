@@ -96,14 +96,37 @@ def main() -> int:
         json.dump(editais_out, f, ensure_ascii=False, separators=(",", ":"))
     print(f"editais.json: {len(editais_out)} registros")
 
+    # primeiro passo pelos itens: monta os arquivos por edital E o indice de
+    # recintos por lote (edle, loteNrAtribuido) -> lista de locais de armazenagem,
+    # que nao existe no nivel de lote na planilha original.
+    itens_por_edle: dict[str, list] = {}
+    recintos_por_lote: dict[tuple, set] = {}
+    for _, r in df_itens.iterrows():
+        edle = clean(r.get("edle"))
+        if not edle:
+            continue
+        lote_nr = clean(r.get("loteNrAtribuido"))
+        recinto = clean(r.get("recintoArmazenador"))
+        itens_por_edle.setdefault(edle, []).append({
+            "loteNrAtribuido": lote_nr,
+            "recintoArmazenador": recinto,
+            "quantidade": clean(r.get("quantidade")),
+            "unMedida": clean(r.get("unMedida")),
+            "descricao": clean(r.get("descricao")),
+        })
+        if recinto:
+            recintos_por_lote.setdefault((edle, lote_nr), set()).add(recinto)
+
     lotes_out = []
     for _, r in df_lotes.iterrows():
         edle = clean(r.get("edle"))
         if not edle:
             continue
+        lote_nr = clean(r.get("loteNrAtribuido"))
+        recintos = sorted(recintos_por_lote.get((edle, lote_nr), []))
         lotes_out.append({
             "edle": edle,
-            "loteNrAtribuido": clean(r.get("loteNrAtribuido")),
+            "loteNrAtribuido": lote_nr,
             "tipo": clean(r.get("tipo")),
             "situacaoLote": clean(r.get("situacaoLote")),
             "cidade": clean(r.get("cidade")),
@@ -112,24 +135,12 @@ def main() -> int:
             "destaque": bool(r.get("destaque")) if clean(r.get("destaque")) is not None else None,
             "permitePF": bool(r.get("permitePF")) if clean(r.get("permitePF")) is not None else None,
             "qtdItens": clean(r.get("qtdItens")),
+            "recintos": recintos,
         })
 
     with open(OUT_DIR / "lotes.json", "w", encoding="utf-8") as f:
         json.dump(lotes_out, f, ensure_ascii=False, separators=(",", ":"))
     print(f"lotes.json: {len(lotes_out)} registros")
-
-    itens_por_edle: dict[str, list] = {}
-    for _, r in df_itens.iterrows():
-        edle = clean(r.get("edle"))
-        if not edle:
-            continue
-        itens_por_edle.setdefault(edle, []).append({
-            "loteNrAtribuido": clean(r.get("loteNrAtribuido")),
-            "recintoArmazenador": clean(r.get("recintoArmazenador")),
-            "quantidade": clean(r.get("quantidade")),
-            "unMedida": clean(r.get("unMedida")),
-            "descricao": clean(r.get("descricao")),
-        })
 
     total_itens = 0
     for edle, itens in itens_por_edle.items():
@@ -142,6 +153,9 @@ def main() -> int:
     # indice auxiliar: lista de edles que tem arquivo de itens (pro front saber o que pode buscar)
     with open(OUT_DIR / "itens_index.json", "w", encoding="utf-8") as f:
         json.dump(sorted(itens_por_edle.keys()), f, ensure_ascii=False)
+
+    with open(OUT_DIR / "meta.json", "w", encoding="utf-8") as f:
+        json.dump({"geradoEm": agora.isoformat(timespec="seconds")}, f, ensure_ascii=False)
 
     print("OK.")
     return 0
