@@ -376,7 +376,7 @@
   }
 
   function wireControls() {
-    ["fBusca", "fCidade", "fTipo", "fValorMin", "fValorMax", "fPermitePF"].forEach(id => {
+    ["fBusca", "fCidade", "fValorMin", "fValorMax", "fPermitePF"].forEach(id => {
       const el = document.getElementById(id);
       el.addEventListener("input", () => applyFilters());
       el.addEventListener("change", () => applyFilters());
