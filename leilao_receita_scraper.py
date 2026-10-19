@@ -25,6 +25,7 @@ from threading import Lock
 
 import pandas as pd
 import requests
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
@@ -137,6 +138,10 @@ def processar_edital(session: requests.Session, ref: EditalRef) -> tuple[dict, l
     return edital_row, lista_lotes
 
 
+def limpar_para_excel(df: pd.DataFrame) -> pd.DataFrame:
+    return df.map(lambda v: ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--situacoes", type=int, nargs="*", default=None,
@@ -241,9 +246,10 @@ def main() -> int:
     df_itens = pd.DataFrame(itens_rows, columns=ITEM_COLS).sort_values(["edle", "loteNrAtribuido"])
 
     with pd.ExcelWriter(args.output, engine="openpyxl") as writer:
-        df_editais.to_excel(writer, sheet_name="Editais", index=False)
-        df_lotes.to_excel(writer, sheet_name="Lotes", index=False)
-        df_itens.to_excel(writer, sheet_name="Itens", index=False)
+        for df, sheet in ((df_editais, "Editais"), (df_lotes, "Lotes"), (df_itens, "Itens")):
+            # a API as vezes devolve caracteres de controle (ex: \x02 em formaContato),
+            # que o openpyxl recusa com IllegalCharacterError
+            limpar_para_excel(df).to_excel(writer, sheet_name=sheet, index=False)
 
     print(f"\nPronto! {len(df_editais)} editais, {len(df_lotes)} lotes, {len(df_itens)} itens -> {args.output}")
     return 0
