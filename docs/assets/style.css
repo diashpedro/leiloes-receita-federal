@@ -276,6 +276,12 @@ table.data tbody tr.lote-row.expanded { background: var(--page); }
 .itens-wrap .price-links { white-space: nowrap; font-size: 11.5px; }
 .itens-wrap .price-links a { color: var(--series-1); text-decoration: none; }
 .itens-wrap .price-links a:hover { text-decoration: underline; }
+.lance-cell { font-weight: 600; cursor: help; }
+.itens-wrap .hist-resumo { font-size: 12.5px; color: var(--text-secondary); padding: 4px 8px 10px; }
+.itens-wrap .hist-cell { font-size: 11.5px; white-space: nowrap; }
+.itens-wrap .hist-med strong { color: var(--text-primary); }
+.itens-wrap .hist-ex { color: var(--text-muted); cursor: help; }
+.itens-wrap .hist-none { color: var(--text-muted); font-style: italic; }
 
 .cat-cell { padding: 4px 6px !important; }
 .cat-select {

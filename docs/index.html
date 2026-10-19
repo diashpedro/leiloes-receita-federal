@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leiloes Receita Federal - Painel</title>
-<link rel="stylesheet" href="assets/style.css?v=3">
+<link rel="stylesheet" href="assets/style.css?v=5">
 </head>
 <body>
 <div class="wrap">
@@ -122,6 +122,7 @@
             <th data-key="qtdItens">Itens</th>
             <th data-key="valorMinimo">Vlr Minimo (R$)</th>
             <th data-key="valorAvaliacao">Vlr Avaliacao (R$)</th>
+            <th data-key="lanceSugerido" title="Avaliacao x mediana de (arrematado / avaliacao) de lotes semelhantes ja arrematados, nunca abaixo do minimo">Lance Sugerido (hist.)</th>
             <th data-key="indiceAvalMin">Aval. / Minimo</th>
             <th data-key="permitePF">PF?</th>
             <th data-key="statusEstimado">Status Edital</th>
@@ -150,9 +151,13 @@
     Dados publicos do Sistema Leilao Eletronico da Receita Federal (www25.receita.fazenda.gov.br/sle-sociedade).
     Gerado automaticamente a partir de um scraper local; pode conter lotes desatualizados ou indisponiveis no momento da consulta.
     Clique em uma linha da tabela para ver os itens do lote e pesquisar o preco de mercado de cada item sob demanda (links para Mercado Livre e Google Shopping).
+    A coluna "Arrematacao historica" mostra o preco por unidade pago em leiloes anteriores por produtos de descricao semelhante
+    (Extrato do Leilao publicado pela Receita; so entram lotes com um unico produto, para o preco por unidade ser exato).
+    O "Lance Sugerido (hist.)" aplica ao valor de avaliacao do lote a mediana de arrematado / avaliacao desses lotes
+    semelhantes (nunca abaixo do minimo); passe o mouse para ver a faixa 25%-75% e quantos lotes entraram na conta.
   </p>
 </div>
 
-<script src="assets/app.js?v=4"></script>
+<script src="assets/app.js?v=6"></script>
 </body>
 </html>

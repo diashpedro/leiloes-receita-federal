@@ -81,7 +81,45 @@
     return `${day}/${m}/${y}${t ? " " + t : ""}`;
   }
   function fmtIndice(v) { return (v === null || v === undefined || isNaN(v)) ? "-" : v.toFixed(2) + "x"; }
+  // preco unitario pode ser de centavos (ex: parafuso), entao mostra casas decimais abaixo de R$ 100
+  function fmtPreco(v) {
+    return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: v < 100 ? 2 : 0 });
+  }
+  function esc(s) {
+    return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
   function cleanDescricao(s) { return (s || "").replace(/\/+\s*$/, "").trim(); }
+
+  // ---- historico de arrematacao: calculado em export_dashboard_data.py a partir de historico/.
+  // item.hist = preco unitario de produtos semelhantes ja arrematados;
+  // lote.lanceSugerido = avaliacao x mediana (arrematado / avaliacao) dos lotes semelhantes. ----
+  function renderHistItem(item) {
+    const h = item.hist;
+    if (!h) return `<span class="hist-none">sem historico</span>`;
+    const un = esc(item.unMedida || "un");
+    const exemplos = h.ex.map(([precoUnit, qtd, data, edle, lote, descricao]) => `
+      <div class="hist-ex" title="${esc(descricao)} &#10;Edital ${esc(edle)}, lote ${lote}">
+        ${fmtPreco(precoUnit)}/${un} &middot; ${fmtNum(qtd)} ${un} &middot; ${fmtDate(data)}
+      </div>`).join("");
+    return `<div class="hist-med"><strong>${fmtPreco(h.med)}/${un}</strong> mediana de ${h.n} lote(s)</div>${exemplos}`;
+  }
+
+  function lanceTooltip(l) {
+    if (!l.lanceSugerido) return "Nenhum lote semelhante no historico de arrematacoes";
+    return `${l.histN} lote(s) semelhantes arrematados a ${l.histRazao.toFixed(2)}x a avaliacao (mediana). ` +
+      `Faixa 25%-75%: ${fmtMoney(l.histFaixa[0])} a ${fmtMoney(l.histFaixa[1])}`;
+  }
+
+  function renderHistLote(l) {
+    if (!l.lanceSugerido) {
+      return `<div class="hist-resumo">Nenhum lote semelhante encontrado no historico de arrematacoes.</div>`;
+    }
+    const noMinimo = l.valorAvaliacao * l.histRazao < (l.valorMinimo || 0)
+      ? " (o historico fica abaixo do valor minimo, entao a sugestao e o proprio minimo)" : "";
+    return `<div class="hist-resumo">Lance sugerido pelo historico: <strong>${fmtMoney(l.lanceSugerido)}</strong>${noMinimo}
+      &mdash; faixa de ${fmtMoney(l.histFaixa[0])} a ${fmtMoney(l.histFaixa[1])}.
+      ${l.histN} lote(s) com itens semelhantes foram arrematados, em mediana, a ${l.histRazao.toFixed(2)}x a avaliacao.</div>`;
+  }
   function mlSearchUrl(q) {
     const slug = q.toLowerCase()
       .normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -97,8 +135,10 @@
       const meta = await fetch("data/meta.json").then(r => r.json());
       if (meta.geradoEm) {
         const dt = new Date(meta.geradoEm);
+        const h = meta.historico;
         document.getElementById("lastUpdated").textContent =
-          "Dados atualizados em " + dt.toLocaleString("pt-BR");
+          "Dados atualizados em " + dt.toLocaleString("pt-BR") +
+          (h && h.lotesArrematados ? ` · Historico: ${fmtNum(h.lotesArrematados)} lotes arrematados em ${fmtNum(h.editais)} leiloes desde ${fmtDate(h.desde)}` : "");
       }
     } catch (e) { /* meta.json opcional */ }
   }
@@ -416,6 +456,7 @@
         <td>${fmtNum(l.qtdItens)}</td>
         <td>${fmtMoney(l.valorMinimo)}</td>
         <td>${fmtMoney(l.valorAvaliacao)}</td>
+        <td class="lance-cell" title="${esc(lanceTooltip(l))}">${fmtMoney(l.lanceSugerido)}</td>
         <td>${fmtIndice(l._indiceAvalMin)}</td>
         <td>${l.permitePF ? "Sim" : "Nao"}</td>
         <td><span class="badge ${statusClass(l._statusEstimado)}">${l._statusEstimado}</span></td>
@@ -445,7 +486,7 @@
         const trItens = document.createElement("tr");
         trItens.className = "itens-row";
         const td = document.createElement("td");
-        td.colSpan = 15;
+        td.colSpan = 16;
         td.className = "itens-wrap";
         td.id = `itens-${key}`;
         td.innerHTML = `<div class="loading" data-loading="1">Carregando itens... (0s)</div>`;
@@ -495,21 +536,23 @@
       clearInterval(tick);
       const cell = document.getElementById(`itens-${key}`); // busca fresca no momento de escrever, nao antes do await
       if (!cell) return; // usuario fechou/trocou de lote enquanto carregava
+      const resumo = renderHistLote(lote);
       if (itens.length === 0) {
-        cell.innerHTML = `<div class="loading">Nenhum item detalhado disponivel para este lote.</div>`;
+        cell.innerHTML = resumo + `<div class="loading">Nenhum item detalhado disponivel para este lote.</div>`;
         return;
       }
-      cell.innerHTML = `
+      cell.innerHTML = resumo + `
         <table>
-          <thead><tr><th>Recinto</th><th>Qtd</th><th>Un.</th><th>Descricao</th><th>Preco de mercado</th></tr></thead>
+          <thead><tr><th>Recinto</th><th>Qtd</th><th>Un.</th><th>Arrematacao historica</th><th>Descricao</th><th>Preco de mercado</th></tr></thead>
           <tbody>
             ${itens.map(i => {
               const desc = cleanDescricao(i.descricao);
               return `<tr>
-                <td>${i.recintoArmazenador || "-"}</td>
+                <td>${esc(i.recintoArmazenador || "-")}</td>
                 <td>${fmtNum(i.quantidade)}</td>
-                <td>${i.unMedida || "-"}</td>
-                <td>${desc}</td>
+                <td>${esc(i.unMedida || "-")}</td>
+                <td class="hist-cell">${renderHistItem(i)}</td>
+                <td>${esc(desc)}</td>
                 <td class="price-links">
                   <a href="${mlSearchUrl(desc)}" target="_blank" rel="noopener">Mercado Livre</a>
                   &middot;
@@ -537,12 +580,12 @@
 
   function exportCsv() {
     const header = ["Edital", "Cidade/Unidade", "Tipo", "Recintos", "Lote", "QtdItens", "ValorMinimo", "ValorAvaliacao",
-      "IndiceAvalMinimo", "PermitePF", "StatusEdital", "InicioPropostas", "FimPropostas", "DataLeilao", "MinhaCategoria"];
+      "LanceSugeridoHistorico", "IndiceAvalMinimo", "PermitePF", "StatusEdital", "InicioPropostas", "FimPropostas", "DataLeilao", "MinhaCategoria"];
     const lines = [header.join(";")];
     state.filtered.forEach(l => {
       lines.push([
         l._edital || l.edle, l._cidade || "", l.tipo || "", (l.recintos || []).join(" | "), l.loteNrAtribuido,
-        l.qtdItens || 0, l.valorMinimo || 0, l.valorAvaliacao || 0, l._indiceAvalMin ? l._indiceAvalMin.toFixed(2) : "",
+        l.qtdItens || 0, l.valorMinimo || 0, l.valorAvaliacao || 0, l.lanceSugerido || "", l._indiceAvalMin ? l._indiceAvalMin.toFixed(2) : "",
         l.permitePF ? "Sim" : "Nao", l._statusEstimado,
         l._dataInicioPropostas || "", l._dataFimPropostas || "", l._dataAberturaLances || "", l._categoria || "",
       ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(";"));
